@@ -1,5 +1,0 @@
-cxxglue.o: $(srcdir)/config/m68k/cxxglue.c
-	$(CC) $(CFLAGS) -c $< -noixemul
-
-EXTRA_PARTS=cxxglue.o
-
