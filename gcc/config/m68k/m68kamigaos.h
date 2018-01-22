@@ -358,7 +358,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
   "%{m68030:-D__mc68030__ -D__mc68030} "            \
   "%{m68040:-D__mc68040__ -D__mc68040} "            \
   "%{m68060:-D__mc68060__ -D__mc68060} "            \
-  "%{noixemul:%(cpp_libnix)} "                      \
+  "%{noixemul:%(cpp_clib2)} "                      \
   "%{mcrt=nix*:%(cpp_libnix)} "                     \
   "%{mcrt=ixemul:%(cpp_ixemul)} "                   \
   "%{mcrt=clib2:%(cpp_clib2)}"
@@ -435,7 +435,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
    "startup%O%s"
 #else
 #define STARTFILE_SPEC                                            \
-  "%{noixemul:%(startfile_libnix)} "                              \
+  "%{noixemul:%(startfile_clib2)} "                              \
   "%{mcrt=nix*:%(startfile_libnix)} "                             \
   "%{mcrt=ixemul:%(startfile_ixemul)} "                           \
   "%{mcrt=clib2:%(startfile_clib2)}"
@@ -447,7 +447,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
 
 #undef ENDFILE_SPEC
 #define ENDFILE_SPEC                                              \
-  "%{noixemul:%(endfile_libnix)} "                                \
+  "%{noixemul:%(endfile_clib2)} "                                \
   "%{mcrt=nix*:%(endfile_libnix)} "                               \
   "%{mcrt=ixemul:%(endfile_ixemul)} "                             \
   "%{mcrt=clib2:%(endfile_clib2)}"
@@ -486,7 +486,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
   "-lvc -lamiga "
 #else
 #define LIB_SPEC                                                  \
-  "%{noixemul:%(lib_libnix)} "                                    \
+  "%{noixemul:%(lib_clib2)} "                                    \
   "%{mcrt=nix*:%(lib_libnix)} "                                   \
   "%{mcrt=ixemul:%(lib_ixemul)} "                                 \
   "%{mcrt=clib2:%(lib_clib2)}"
@@ -498,7 +498,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
   "%{!mcrt=*:-lnix20} -lstubs"
 #define LIBGCC_CLIB2_SPEC "-lc"
 #define LIBGCC_SPEC "-lgcc " \
-  "%{noixemul:%(libgcc_libnix)} "                                 \
+  "%{noixemul:%(libgcc_clib2)} "                                 \
   "%{mcrt=nix*:%(libgcc_libnix)} "                                \
   "%{mcrt=ixemul:%(libgcc_ixemul)} "                              \
   "%{mcrt=clib2:%(libgcc_clib2)}"
@@ -519,7 +519,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
 
 #ifdef TARGET_AMIGAOS_VASM
 #define LINK_SPEC                                                 \
-  "%{noixemul:%(link_libnix)} "                                   \
+  "%{noixemul:%(link_clib2)} "                                   \
   "%{mcrt=nix*:%(link_libnix)} "                                  \
   "%{mcrt=ixemul:%(link_ixemul)} "                                \
   "%{mcrt=clib2:%(link_clib2)} "                                  \
@@ -538,7 +538,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
   "%{m68881:-fl libm881}"
 #else
 #define LINK_SPEC                                                 \
-  "%{noixemul:%(link_libnix)} "                                   \
+  "%{noixemul:%(link_clib2)} "                                   \
   "%{mcrt=nix*:%(link_libnix)} "                                  \
   "%{mcrt=ixemul:%(link_ixemul)} "                                \
   "%{mcrt=clib2:%(link_clib2)} "                                  \
