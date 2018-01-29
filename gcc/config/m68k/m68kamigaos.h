@@ -332,7 +332,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
   "-isystem %:sdk_root(libnix/include) "             \
   "%{!ansi:-Dlibnix} -D__libnix__ -D__libnix"
 #define CPP_CLIB2_SPEC                              \
-  "-isystem %:sdk_root(clib2/include) "              \
+  "-isystem %:sdk_root(include) "              \
   "%{!ansi:-DCLIB2} -D__CLIB2__ -D__CLIB2"
 
 /* Define __HAVE_68881__ in preprocessor according to the -m flags.
@@ -419,7 +419,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
    ")"
 
 #define STARTFILE_CLIB2_SPEC                                      \
-  "%:sdk_root(clib2/lib/ "                                         \
+  "%:sdk_root(lib/ "                                         \
   "%{resident32:nr32crt0.o%s}"                                    \
   "%{!resident32:"                                                \
     "%{fbaserel32:nb32crt0.o%s}"                                  \
@@ -515,7 +515,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
 
 #define LINK_IXEMUL_SPEC ""
 #define LINK_LIBNIX_SPEC "-L%:sdk_root(libnix/lib) -fl libnix"
-#define LINK_CLIB2_SPEC "-L%:sdk_root(clib2/lib)"
+#define LINK_CLIB2_SPEC "-L%:sdk_root(lib)"
 
 /* If debugging, tell the linker to output amiga-hunk symbols *and* a BSD
    compatible debug hunk.

@@ -10126,7 +10126,7 @@ const char * amiga_m68k_prefix_func(int argc, const char ** argv) {
 	      if (p)
 		{
 		  p[1] = 0;
-		  p = concat(glp, "m68k-amigaos/", NULL);
+		  p = concat(glp, "m68k-unknown-amigaos/", NULL);
 		}
 	    }
         }
