@@ -419,7 +419,6 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
    ")"
 
 #define STARTFILE_CLIB2_SPEC                                      \
-  "%:sdk_root(lib/ "                                         \
   "%{resident32:nr32crt0.o%s}"                                    \
   "%{!resident32:"                                                \
     "%{fbaserel32:nb32crt0.o%s}"                                  \
@@ -427,8 +426,7 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
       "%{resident:nrcrt0.o%s}"                                    \
       "%{!resident:"                                              \
         "%{fbaserel:nbcrt0.o%s}"                                  \
-        "%{!fbaserel:ncrt0.o%s}}}}" \
-  ")"
+        "%{!fbaserel:ncrt0.o%s}}}}"
 
 #undef	STARTFILE_SPEC
 #ifdef TARGET_AMIGAOS_VASM
