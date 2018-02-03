@@ -129,11 +129,20 @@ enum proepis
  */
 class track_var
 {
+  /** The cached value.
+   * CONST_INT: if < 0x100000000: a real int value
+   *            else: a value encoded from the line where the value was created.
+   * MEM: the rtx
+   */
   rtx value[FIRST_PSEUDO_REGISTER];
-  unsigned mask[FIRST_PSEUDO_REGISTER];
+
+  /*
+   * the bitmask of the used registers. needed for invalidation.
+   */
+  unsigned usedRegs[FIRST_PSEUDO_REGISTER];
 
   bool
-  extend (rtx * z, unsigned * mask, machine_mode dstMode, rtx x)
+  extend (rtx * z, machine_mode dstMode, rtx x)
   {
     switch (GET_CODE(x))
       {
@@ -149,20 +158,18 @@ class track_var
       case REG:
 	{
 	  rtx v = value[REGNO(x)];
-	  unsigned mr = mask[REGNO(x)];
+	  unsigned v_usedRegs = usedRegs[REGNO(x)];
 	  /* try to expand the register. */
 	  if (v)
 	    {
-	      if (dstMode != GET_MODE(v) && (GET_CODE(v) != CONST_INT || mr == (1 << FIRST_PSEUDO_REGISTER)))
+	      if (dstMode != GET_MODE(v) && (GET_CODE(v) != CONST_INT || v_usedRegs == (1 << FIRST_PSEUDO_REGISTER)))
 		return false;
 
-	      *mask |= mr;
 	      *z = v;
 	      return true;
 	    }
 
 	  /* store the reg otherwise. */
-	  *mask |= (1 << REGNO(x));
 	  if (GET_MODE(x) == dstMode)
 	    *z = x;
 	  else
@@ -197,7 +204,7 @@ class track_var
 	      return true;
 
 	    case REG:
-	      if (!extend (&m, mask, dstMode, m))
+	      if (!extend (&m, dstMode, m))
 		return false;
 
 	      *z = gen_rtx_MEM (GET_MODE(x), m);
@@ -212,7 +219,7 @@ class track_var
 		  return false;
 
 		if (REG_P(y))
-		  if (!extend (&y, mask, dstMode, y))
+		  if (!extend (&y, dstMode, y))
 		    return false;
 
 		if (GET_CODE(x) == PLUS) // create an own plus to be able to modify the constant offset (later).
@@ -242,7 +249,7 @@ public:
       for (unsigned i = 0; i < FIRST_PSEUDO_REGISTER; ++i)
 	{
 	  value[i] = 0;
-	  mask[i] = 0;
+	  usedRegs[i] = 0;
 	}
   }
 
@@ -250,8 +257,7 @@ public:
   find_alias (rtx src)
   {
     rtx z = 0;
-    unsigned m = 0;
-    if (extend (&z, &m, GET_MODE(src), src))
+    if (extend (&z, GET_MODE(src), src))
       {
 	for (unsigned i = 0; i < FIRST_PSEUDO_REGISTER; ++i)
 	  {
@@ -266,15 +272,14 @@ public:
   invalidate_mem (rtx dst)
   {
     rtx z = 0;
-    unsigned m = 0;
-    if (extend (&z, &m, GET_MODE(dst), dst))
+    if (extend (&z, GET_MODE(dst), dst))
       {
 	for (unsigned i = 0; i < FIRST_PSEUDO_REGISTER; ++i)
 	  {
 	    if (rtx_equal_p (z, value[i]))
 	      {
 		value[i] = 0;
-		mask[i] = 0;
+		usedRegs[i] = 0;
 	      }
 	  }
       }
@@ -290,7 +295,7 @@ public:
   }
 
   void
-  set (machine_mode mode, unsigned regno, rtx x, unsigned index)
+  set (machine_mode mode, unsigned regno, rtx x, unsigned my_use, unsigned index)
   {
     if (regno >= FIRST_PSEUDO_REGISTER)
       return;
@@ -298,7 +303,33 @@ public:
     if (mode == SFmode && regno < 16)
       mode = SImode;
 
-    if (!extend (&value[regno], &mask[regno], mode, x))
+    for (unsigned i = 0; i < FIRST_PSEUDO_REGISTER; ++i)
+      {
+	if (usedRegs[i] & (1 << regno))
+	  {
+	    value[i] = 0;
+	    usedRegs[i] = 0;
+	  }
+      }
+
+    if (extend (&value[regno], mode, x))
+      {
+	usedRegs[regno] = my_use;
+	// convert reg value int regs value.
+	if (REG_P(value[regno]))
+	  {
+	    unsigned refregno = REGNO(value[regno]);
+	    rtx val = value[refregno];
+	    if (!val)
+	      {
+		val = gen_rtx_raw_CONST_INT(mode, 0x100000000000000LL | ((long long int ) (refregno) << 32) | (0xffffffff & -index));
+		value[refregno] = val;
+	      }
+	    value[regno] = val;
+	    usedRegs[regno] = usedRegs[refregno];
+	  }
+      }
+    else
       {
 	clear (mode, regno, index);
       }
@@ -314,8 +345,7 @@ public:
       return false;
 
     rtx z = 0;
-    unsigned m = 0;
-    if (!extend (&z, &m, GET_MODE(x), x))
+    if (!extend (&z, GET_MODE(x), x))
       return false;
 
     return rtx_equal_p (z, value[regno]);
@@ -330,7 +360,7 @@ public:
     if (mode == SFmode && regno < 16)
       mode = SImode;
     value[regno] = gen_rtx_raw_CONST_INT(mode, 0x100000000000000LL | ((long long int ) (regno) << 32) | index);
-    mask[regno] = 1 << FIRST_PSEUDO_REGISTER;
+    usedRegs[regno] = 1 << FIRST_PSEUDO_REGISTER;
   }
 
   void
@@ -338,10 +368,10 @@ public:
   {
     for (int i = 2; i < FIRST_PSEUDO_REGISTER; ++i)
       {
-	if (mask[i] && mask[i] < 1 << FIRST_PSEUDO_REGISTER)
+	if (value[i] && MEM_P(value[i]))
 	  {
 	    value[i] = 0;
-	    mask[i] = 0;
+	    usedRegs[i] = 0;
 	  }
       }
     clear (SImode, 0, index);
@@ -369,7 +399,7 @@ public:
     for (int i = 0; i < FIRST_PSEUDO_REGISTER; ++i)
       {
 	value[i] = o->value[i];
-	mask[i] = o->mask[i];
+	usedRegs[i] = o->usedRegs[i];
       }
   }
 
@@ -382,7 +412,7 @@ public:
 	if (!rtx_equal_p (value[i], o->value[i]))
 	  {
 	    value[i] = o->value[i] = 0;
-	    mask[i] = 0;
+	    usedRegs[i] = 0;
 	  }
       }
   }
@@ -926,9 +956,9 @@ public:
   }
 
   inline insn_info &
-  or_use (insn_info const & o)
+  or_def (insn_info const & o)
   {
-    use |= o.myuse | o.def | o.hard;
+    def |= o.def;
     return *this;
   }
 
@@ -1044,7 +1074,7 @@ public:
   set_insn (rtx_insn * newinsn);
 
   void
-  a5_to_a7 (rtx a7);
+  a5_to_a7 (rtx a7, int add);
 };
 
 bool
@@ -1670,7 +1700,7 @@ replace_reg (rtx x, unsigned regno, rtx newreg, int offset)
 }
 
 void
-insn_info::a5_to_a7 (rtx a7)
+insn_info::a5_to_a7 (rtx a7, int add)
 {
   if (proepi == IN_EPILOGUE && src_mem_reg && get_src_mem_regno () == FRAME_POINTER_REGNUM)
     {
@@ -1681,7 +1711,7 @@ insn_info::a5_to_a7 (rtx a7)
 	  return;
 	}
     }
-  replace_reg (PATTERN (insn), FRAME_POINTER_REGNUM, a7, -4);
+  replace_reg (PATTERN (insn), FRAME_POINTER_REGNUM, a7, add-4);
 }
 
 void
@@ -2089,26 +2119,20 @@ update_insn_infos (void)
 	}
     }
 
-  /* fill the mask of general used regs. */
+  /* fill the mask of regs which are assigned a value. */
   insn_info zz;
   for (unsigned i = 0; i < infos.size (); ++i)
     {
       insn_info & ii = infos[i];
-      if (ii.in_proepi () != IN_PROLOGUE)
-	break;
+      if (ii.in_proepi ())
+	continue;
 
-      zz.or_use (ii);
+      zz.or_def (ii);
     }
 
   /* always allow a0/a1, d0/d1. */
-  usable_regs = zz.get_use () | 0x303;
-  if (flag_pic)
-    usable_regs &= ~(1 << PIC_REG);
-
-  if (infos.size () && infos[0].is_use (FRAME_POINTER_REGNUM))
-    usable_regs &= ~(1 << FRAME_POINTER_REGNUM);
-
-  usable_regs &= ~(1 << STACK_POINTER_REGNUM);
+  usable_regs = zz.get_def () | 0x303;
+  usable_regs &= 0x7fff;
 }
 
 enum AbortCodes
@@ -2337,8 +2361,6 @@ opt_reg_rename (void)
 
   if (infos.size () < 2)
     return 0;
-
-  unsigned usable_regs = 0x7fff & (infos[0].get_use() | infos[1].get_use() | 0x303);
 
 //  dump_insns ("rename", 1);
   for (unsigned index = 0; index < infos.size (); ++index)
@@ -3268,7 +3290,7 @@ opt_merge_add (void)
 
 /* Update the insn_infos to 'know' the sp offset. */
 static unsigned
-track_sp ()
+track_sp (int & a5_touched)
 {
 // reset visited flags - also check if sp is used as REG src.
   for (unsigned index = 0; index < infos.size (); ++index)
@@ -3277,8 +3299,11 @@ track_sp ()
       ii.clear_visited ();
       ii.set_sp_offset (0);
 
+      if (ii.in_proepi() == IN_CODE)
+	a5_touched |= ii.get_myuse() & 0x2000;
+
       // if sp is used as source, we cannot shrink the stack yet
-      // too complicated
+      // too complicated - well, could be done^^
       if (ii.get_src_regno () == STACK_POINTER_REGNUM)
 	return -1;
     }
@@ -3412,7 +3437,8 @@ opt_shrink_stack_frame (void)
 
   /* needed to track sp correctly. */
   update_label2jump ();
-  if (track_sp ())
+  int a5_touched = 0;
+  if (track_sp (a5_touched))
     return 0; // do nothing on stack errors
 
   std::vector<int> a5pos;
@@ -3563,17 +3589,8 @@ opt_shrink_stack_frame (void)
 	}
       ++pos;
     }
-  /* gather usage stats without prologue/epilogue */
-  insn_info ii;
-  for (unsigned i = 0; i < infos.size (); ++i)
-    {
-      insn_info & jj = infos[i];
-      if (jj.in_proepi () != IN_CODE)
-	continue;
 
-      ii.or_use (jj);
-    }
-  unsigned freemask = ~ii.get_use () & 0x7fff;
+  unsigned freemask = 0x7fff & ~usable_regs;
 
   rtx a7 = gen_raw_REG (SImode, STACK_POINTER_REGNUM);
   rtx a5 = gen_raw_REG (SImode, FRAME_POINTER_REGNUM);
@@ -3765,6 +3782,10 @@ opt_shrink_stack_frame (void)
 		  SET_INSN_DELETED(insn);
 		  ++changed;
 		}
+	      else
+		{
+		  regs_total_size += GET_MODE_SIZE(GET_MODE(src));
+		}
 	    }
 	  else
 	    {
@@ -3801,7 +3822,7 @@ opt_shrink_stack_frame (void)
       /* for now only drop the frame pointer if it's not used.
        * Needs tracking of the sp to adjust the offsets.
        */
-      if (freemask & (1 << FRAME_POINTER_REGNUM))
+      if (!a5_touched)
 	{
 	  log ("(f) dropping unused frame pointer\n");
 	  for (std::vector<int>::reverse_iterator i = a5pos.rbegin (); i != a5pos.rend (); ++i)
@@ -3827,10 +3848,14 @@ opt_shrink_stack_frame (void)
 	  for (unsigned i = 0; i < infos.size (); ++i)
 	    {
 	      insn_info & ii = infos[i];
+
+	      //skip already deleted insns.
+	      if (GET_CODE(ii.get_insn()) == NOTE)
+		continue;
 	      if (ii.get_myuse () & (1 << FRAME_POINTER_REGNUM))
 		{
-		  ii.a5_to_a7 (a7);
-		  if (regs_seen && ii.in_proepi () == IN_EPILOGUE_PARALLEL_POP)
+		  ii.a5_to_a7 (a7, regs_total_size - ii.get_sp_offset());
+		  if (regs_total_size && regs_seen && ii.in_proepi () == IN_EPILOGUE_PARALLEL_POP)
 		    {
 		      // exit sp insn needs an +
 		      rtx pattern = PATTERN (ii.get_insn ());
@@ -4027,7 +4052,7 @@ track_regs ()
 	  if (ii.is_src_mem () && src->volatil)
 	    continue;
 
-	  track->set (ii.get_mode (), dregno, src, index);
+	  track->set (ii.get_mode (), dregno, src, ii.get_myuse(), index);
 	}
       delete track;
     }
@@ -4468,6 +4493,24 @@ opt_autoinc ()
   return change_count;
 }
 
+void print_inline_info()
+{
+  unsigned count = 0;
+  for (unsigned index = 0; index < infos.size(); ++index)
+    {
+      if (!infos[index].in_proepi())
+	++count;
+    }
+
+  for (unsigned m = usable_regs >> 2; m; m>>=1)
+    {
+      if (count && (m&1))
+	--count;
+    }
+
+  printf(":bbb: inline weight = %4d\t%s\n", count, get_current_function_name ());
+}
+
 namespace
 {
 
@@ -4612,6 +4655,9 @@ namespace
 	update_insns ();
 	track_regs ();
       }
+
+    if (be_verbose)
+      print_inline_info();
 
     return r;
   }

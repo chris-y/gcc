@@ -151,10 +151,25 @@ struct amigaos_args
   long regs_already_used;
   int last_arg_reg;
   int last_arg_len;
-  tree formal_type; /* New field: formal type of the current argument.  */
+  tree current_param_type; /* New field: formal type of the current argument.  */
+  tree fntype; /* initial function type */
 };
 
 static struct amigaos_args mycum, othercum;
+
+bool amiga_is_ok_for_sibcall(tree decl, tree exp);
+/**
+ * Sibcall is only ok, if max regs d0/d1/a0 are used.
+ * a1 is used for the sibcall
+ * others might be trashed due to stack pop.
+ */
+bool amiga_is_ok_for_sibcall(tree decl, tree exp)
+{
+  tree fntype = decl ? TREE_TYPE (decl) : TREE_TYPE (TREE_TYPE (CALL_EXPR_FN (exp)));
+  if (othercum.fntype == fntype)
+    return (othercum.regs_already_used & ~0x0103) == 0;
+  return false;
+}
 
 /* Argument-passing support functions.  */
 
@@ -169,7 +184,7 @@ amigaos_init_cumulative_args (CUMULATIVE_ARGS *cump, tree fntype, tree decl)
   *cump = decl == current_function_decl;
   cum->num_of_regs = amigaos_regparm > 0 ? amigaos_regparm : 0;
   DPRINTF(
-      ("0amigaos_init_cumulative_args %s %p -> %d\r\n", decl ? lang_hooks.decl_printable_name (decl, 2) : "?", cum, cum->num_of_regs));
+      ("0amigaos_init_cumulative_args %s %d -> %d\r\n", decl ? lang_hooks.decl_printable_name (decl, 2) : "?", *cump, cum->num_of_regs));
 
   /* Initialize a variable CUM of type CUMULATIVE_ARGS
    for a call to a function whose data type is FNTYPE.
@@ -178,33 +193,33 @@ amigaos_init_cumulative_args (CUMULATIVE_ARGS *cump, tree fntype, tree decl)
   cum->last_arg_reg = -1;
   cum->regs_already_used = 0;
 
+  if (!fntype && decl)
+    fntype = TREE_TYPE(decl);
+  if (decl && DECL_ARTIFICIAL(decl))
+    fntype = 0;
   if (fntype)
     {
       tree attrs = TYPE_ATTRIBUTES(fntype);
+      DPRINTF(
+          ("1amigaos_init_cumulative_args %s %d attrs: %p\r\n", decl ? lang_hooks.decl_printable_name (decl, 2) : "?", *cump, attrs));
       if (attrs)
 	{
-	  if (lookup_attribute ("stkparm", attrs))
+	  tree stkp = lookup_attribute ("stkparm", attrs);
+	  tree fnspec = lookup_attribute ("fn spec", attrs);
+	  DPRINTF(
+	      ("2amigaos_init_cumulative_args %s %d stkp: %p %s\r\n", decl ? lang_hooks.decl_printable_name (decl, 2) : "?", *cump, stkp ? stkp : fnspec, IDENTIFIER_POINTER(TREE_PURPOSE(attrs))));
+	  if (stkp || fnspec)
 	    cum->num_of_regs = 0;
 	  else
 	    {
 	      tree ratree = lookup_attribute ("regparm", attrs);
-	      cum->num_of_regs = amigaos_regparm != 0 ?
-	      amigaos_regparm :
+	      cum->num_of_regs = amigaos_regparm != 0 ? amigaos_regparm :
 							AMIGAOS_DEFAULT_REGPARM;
 	      if (ratree)
 		{
-		  tree args = TREE_VALUE(ratree);
-
-		  if (args && TREE_CODE (args) == TREE_LIST)
-		    {
-		      tree val = TREE_VALUE(args);
-		      if (TREE_CODE (val) == INTEGER_CST)
-			{
-			  int no = TREE_INT_CST_LOW(val);
-			  if (no > 0 && no < AMIGAOS_MAX_REGPARM)
-			    cum->num_of_regs = no;
-			}
-		    }
+		  int no = TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(ratree)));
+		  if (no > 0 && no < AMIGAOS_MAX_REGPARM)
+		    cum->num_of_regs = no;
 		}
 	    }
 	}
@@ -241,11 +256,11 @@ amigaos_init_cumulative_args (CUMULATIVE_ARGS *cump, tree fntype, tree decl)
     }
 
   if (fntype)
-    cum->formal_type = TYPE_ARG_TYPES(fntype);
+    cum->current_param_type = TYPE_ARG_TYPES(cum->fntype = fntype);
   else
     /* Call to compiler-support function. */
-    cum->formal_type = 0;
-  DPRINTF(("1amigaos_init_cumulative_args %p -> %d\r\n", cum, cum->num_of_regs));
+    cum->current_param_type = cum->fntype = 0;
+  DPRINTF(("9amigaos_init_cumulative_args %p -> %d\r\n", cum, cum->num_of_regs));
 }
 
 int
@@ -272,8 +287,8 @@ amigaos_function_arg_advance (cumulative_args_t cum_v, machine_mode, const_tree,
       cum->last_arg_reg = -1;
     }
 
-  if (cum->formal_type)
-    cum->formal_type = TREE_CHAIN(cum->formal_type);
+  if (cum->current_param_type)
+    cum->current_param_type = TREE_CHAIN(cum->current_param_type);
 }
 
 /* Define where to put the arguments to a function.
@@ -363,7 +378,7 @@ amigaos_function_arg (cumulative_args_t cum_v, machine_mode mode, const_tree typ
 
   struct amigaos_args *cum = *get_cumulative_args (cum_v) ? &mycum : &othercum;
 
-  tree asmtree = type && cum->formal_type ? TYPE_ATTRIBUTES(TREE_VALUE(cum->formal_type)) : NULL_TREE;
+  tree asmtree = type && cum->current_param_type ? TYPE_ATTRIBUTES(TREE_VALUE(cum->current_param_type)) : NULL_TREE;
 
   if (asmtree && 0 == strcmp ("asm", IDENTIFIER_POINTER(TREE_PURPOSE(asmtree))))
     {
@@ -420,23 +435,27 @@ amigaos_comp_type_attributes (const_tree type1, const_tree type2)
       tree stack2 = lookup_attribute("stkparm", attrs2);
       tree reg2 = lookup_attribute("regparm", attrs2);
 
+      if ((asm1 && !asm2) || (!asm1 && asm2))
+	return 0;
+
       if (reg1)
 	{
-	  if (stack2 || asm2)
+	  if (stack2)
 	    return 0;
 
-	  int no1 = TREE_INT_CST_LOW(TREE_VALUE(reg1));
-	  int no2 = reg2 ? TREE_INT_CST_LOW(TREE_VALUE(reg2)) : amigaos_regparm;
-	  return no1 == no2;
+	  int no1 = TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(reg1)));
+	  int no2 = reg2 ? TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(reg2))) : amigaos_regparm;
+	  if (no1 != no2)
+	    return 0;
 	}
-
-      if (reg2)
+      else if (reg2)
 	{
-	  if (stack1 || asm1)
+	  if (stack1)
 	    return 0;
 
-	  int no2 = TREE_INT_CST_LOW(TREE_VALUE(reg2));
-	  return amigaos_regparm == no2;
+	  int no2 = TREE_INT_CST_LOW(TREE_VALUE(TREE_VALUE(reg2)));
+	  if (amigaos_regparm != no2)
+	    return 0;
 	}
 
       if (stack1) {
@@ -449,15 +468,7 @@ amigaos_comp_type_attributes (const_tree type1, const_tree type2)
 	  return amigaos_regparm  <= 0;
 
       if (asm1)
-	{
-	  if (!asm2)
-	    return 0;
-
-	  return 0 == strcmp(IDENTIFIER_POINTER(TREE_VALUE(asm1)), IDENTIFIER_POINTER(TREE_VALUE(asm2)));
-	}
-
-      if (asm2)
-	return 0;
+	return 0 == strcmp(IDENTIFIER_POINTER(TREE_VALUE(asm1)), IDENTIFIER_POINTER(TREE_VALUE(asm2)));
 
     }
   else
@@ -758,9 +769,9 @@ amigaos_static_chain_rtx (const_tree decl, bool incoming ATTRIBUTE_UNUSED)
   unsigned used = 0;
   tree fntype = TREE_TYPE(decl);
   if (fntype)
-    for (tree formal_type = TYPE_ARG_TYPES(fntype); formal_type; formal_type = TREE_CHAIN(formal_type))
+    for (tree current_param_type = TYPE_ARG_TYPES(fntype); current_param_type; current_param_type = TREE_CHAIN(current_param_type))
       {
-	tree asmtree = TYPE_ATTRIBUTES(TREE_VALUE(formal_type));
+	tree asmtree = TYPE_ATTRIBUTES(TREE_VALUE(current_param_type));
 	if (!asmtree || strcmp ("asm", IDENTIFIER_POINTER(TREE_PURPOSE(asmtree))))
 	  continue;
 

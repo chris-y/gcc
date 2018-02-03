@@ -1424,13 +1424,19 @@ m68k_reg_present_p (const_rtx parallel, unsigned int regno)
   return false;
 }
 
+extern bool amiga_is_ok_for_sibcall(tree decl, tree exp);
 /* Implement TARGET_FUNCTION_OK_FOR_SIBCALL_P.  */
 
 static bool
 m68k_ok_for_sibcall_p (tree decl, tree exp)
 {
   enum m68k_function_kind kind;
-  
+
+#ifdef TARGET_AMIGA
+  if (!amiga_is_ok_for_sibcall(decl, exp))
+    return false;
+#endif
+
   /* We cannot use sibcalls for nested functions because we use the
      static chain register for indirect calls.  */
   if (CALL_EXPR_STATIC_CHAIN (exp))
@@ -4154,9 +4160,9 @@ m68k_output_movem (rtx *operands, rtx pattern,
   else
     {
       if (store_p)
-	return "movem%.l %1,%a0";
+	return "movem%.l %M1,%a0";
       else
-	return "movem%.l %a0,%1";
+	return "movem%.l %a0,%N1";
     }
 }
 
@@ -4557,7 +4563,35 @@ floating_exact_log2 (rtx x)
 void
 print_operand (FILE *file, rtx op, int letter)
 {
-  if (letter == '.')
+  if (letter == 'N')
+    { // movem regs,ax
+      unsigned regbits = INTVAL (op);
+      unsigned regno;
+      for (regno = 0; regbits; ++regno, regbits >>= 1)
+	{
+	  if (regbits & 1)
+	    {
+	      fprintf (file, reg_names[regno]);
+	      if (regbits > 1)
+		fprintf (file, "/");
+	    }
+	}
+    }
+  else if (letter == 'M')
+    { // movem regs,ax
+      unsigned regbits = INTVAL (op);
+      unsigned regno;
+      for (regno = 15; regbits; --regno, regbits >>= 1)
+	{
+	  if (regbits & 1)
+	    {
+	      fprintf (file, reg_names[regno]);
+	      if (regbits > 1)
+		fprintf (file, "/");
+	    }
+	}
+    }
+  else if (letter == '.')
     {
       if (MOTOROLA)
 	fprintf (file, ".");
