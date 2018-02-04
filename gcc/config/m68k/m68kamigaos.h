@@ -386,10 +386,10 @@ if (target_flags & (MASK_RESTORE_A4|MASK_ALWAYS_RESTORE_A4))	\
 
 #ifndef TARGET_AMIGAOS_VASM
 #define ASM_CPU_DEFAULT_SPEC						\
-   "%{!m680*:%{!mc680*:%{!mcpu=*:-m68000}}}"
+   "%{!m680*:%{!mc680*:%{!mcpu=*:-m68020}}}"
 #else
 #define ASM_CPU_DEFAULT_SPEC						\
-   "%{!m680*:%{!mc680*:-m68000}}"
+   "%{!m680*:%{!mc680*:-m68020}}"
 #endif
 
 /* Choose the right startup file, depending on whether we use base relative
