@@ -1338,10 +1338,14 @@ insn_info::scan_rtx (rtx x)
 	    unsigned u = use;
 	    unsigned mu = myuse;
 	    unsigned d = def;
+	    unsigned mr = multi_reg;
 	    scan_rtx (XVECEXP(x, i, j));
 	    use |= u;
 	    myuse |= mu;
 	    def |= d;
+	    multi_reg |= mr;
+	    if ((def - 1) & def)
+	      multi_reg |= def;
 	  }
     }
 
@@ -2148,7 +2152,6 @@ update_insns ()
 {
   rtx_insn *insn, *next;
   unsigned result = 0;
-  rtx jump_table = 0;
 
   clear ();
 
@@ -2180,22 +2183,14 @@ update_insns ()
 		}
 
 	      ii.mark_jump ();
-	      if (jump_table)
-		{
-		  if (XEXP(jump_table, 0) != insn)
-		    {
-		      if (be_very_verbose)
-			{
-			  debug_rtx (insn);
-			  debug_rtx (jump_table);
-			}
-		      result = E_JUMP_TABLE_MISMATCH;
-		      jump_table = 0;
-		      continue;
-		    }
 
+	      rtx table = 0;
+	      rtx_insn * label = (rtx_insn *) JUMP_LABEL(insn);
+	      if (label &&  NEXT_INSN (label) && JUMP_TABLE_DATA_P (NEXT_INSN (label)))
+		table = PATTERN(NEXT_INSN (label));
+	      if (table)
+		{
 		  // -> jump_table_data
-		  rtx table = PATTERN (XEXP(jump_table, 1));
 		  if (GET_CODE(table) == ADDR_DIFF_VEC || GET_CODE(table) == ADDR_VEC)
 		    {
 		      int k = GET_CODE(table) == ADDR_DIFF_VEC;
@@ -2215,13 +2210,11 @@ update_insns ()
 		      if (be_very_verbose)
 			{
 			  debug_rtx (insn);
-			  debug_rtx (jump_table);
+			  debug_rtx (table);
 			}
 		      result = E_JUMP_GOTO_LABEL;
-		      jump_table = 0;
 		      continue;
 		    }
-		  jump_table = 0;
 		}
 	      else
 		{
@@ -2239,7 +2232,6 @@ update_insns ()
 	  else if (LABEL_P(insn))
 	    {
 	      ii.mark_label ();
-	      jump_table = 0;
 	      ii.set_proepi (inproepilogue = IN_CODE);
 	      if (infos.size () > 1)
 		scan_starts.insert (infos.size () - 1);
@@ -2264,16 +2256,6 @@ update_insns ()
 	      rtx set = single_set (insn);
 	      if (set)
 		ii.fledder (set);
-
-	      for (rtx next, note = REG_NOTES(insn); note; note = next)
-		{
-		  next = XEXP(note, 1);
-		  if (REG_NOTE_KIND (note) == REG_LABEL_OPERAND)
-		    {
-		      jump_table = XEXP(note, 0);
-		    }
-		}
-
 	    }
 	}
       else if (NOTE_P(insn))
